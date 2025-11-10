@@ -7,7 +7,7 @@ name: $(date:yyyy)$(date:.MM)$(date:.dd)$(date:.HHmm)
 trigger:
   branches:
     include:
-      - develop
+      - yodeck
       - stage
       - master
   batch: true
@@ -125,7 +125,7 @@ stages:
   - stage: BuildDev
     displayName: Build Image (Dev)
     dependsOn: CopyYAMLFiles
-    condition: and(succeeded(), eq(${{eq(variables['Build.SourceBranchName'], 'develop')}}, 'True'))
+    condition: and(succeeded(), eq(${{eq(variables['Build.SourceBranchName'], 'yodeck')}}, 'True'))
     jobs:
       - job: BuildDev
         displayName: Build Next Dev

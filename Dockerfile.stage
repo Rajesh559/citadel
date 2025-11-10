@@ -36,7 +36,7 @@ RUN npm ci --no-audit --no-fund --ignore-scripts --silent
 
 # Copy source files in optimal order for caching
 COPY next.config.ts tsconfig.json next-env.d.ts postcss.config.mjs ./
-COPY middleware.ts index.d.ts eslint.config.mjs ./
+# COPY middleware.ts index.d.ts eslint.config.mjs ./
 COPY app ./app
 COPY public ./public
 
