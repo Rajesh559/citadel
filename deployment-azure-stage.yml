@@ -1,0 +1,94 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: citadel
+  namespace: stage
+  labels:
+    app: citadel
+  annotations:
+    monitoring: 'true'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: citadel
+  template:
+    metadata:
+      labels:
+        app: citadel
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: acr-to-aks
+      containers:
+        - name: citadel
+          image: abbdmsnonprod.azurecr.io/dms-citadel-ui/dms-citadel-ui-polaris-stage:#{BuildImage}#
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: '/mnt/secrets-store'
+              readOnly: true
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: '100m'
+              memory: '256Mi'
+              ephemeral-storage: '1Gi'
+            limits:
+              cpu: '500m'
+              memory: '500Mi'
+              ephemeral-storage: '2Gi'
+
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: 'citadel'
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: citadel
+  namespace: stage
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: citadel
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    app: citadel
+  annotations:
+    service.beta.kubernetes.io/azure-dns-label-name: citadel
+    service.beta.kubernetes.io/azure-load-balancer-internal: 'true'
+  name: citadel
+  namespace: stage
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app: citadel

@@ -1,0 +1,331 @@
+# Docker
+# Build a Docker image
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+
+name: $(date:yyyy)$(date:.MM)$(date:.dd)$(date:.HHmm)
+
+trigger:
+  branches:
+    include:
+      - develop
+      - stage
+      - master
+  batch: true
+
+resources:
+  repositories:
+    - repository: deploymentscripts
+      name: MOHP-Edge-Gateway/dms-egw-deployment-scripts
+      type: git
+      ref: master
+
+variables:
+  BuildImage: $(Build.BuildId)
+  AzureSubscriptionName: abb-dms-nonprod-service-connection
+  TrialAzureSubscriptionName: abb-dms-nonprod-service-connection
+  CodeLocation: '.'
+  ACRID: '/subscriptions/d4b66a67-1f73-4be2-a001-c7e9231673c4/resourceGroups/abb-dms-non-prod-we-rg-001/providers/Microsoft.ContainerRegistry/registries/abbdmsnonprod'
+  ACRIDPROD: '/subscriptions/560d2cd4-0157-44ca-9c86-b937a3c50236/resourceGroups/abb-dms-prod-we-rg-001/providers/Microsoft.ContainerRegistry/registries/abbdmsprodcr'
+stages:
+  - stage: Initialize
+    displayName: Initializing deployment
+    jobs:
+      - job: Initialize
+        displayName: Initializing deployment
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: 21.x
+            displayName: Nodejs Installation
+
+          - task: CopyFiles@2
+            inputs:
+              sourceFolder: $(CodeLocation)
+              contents: '**/*'
+              targetFolder: $(Build.ArtifactStagingDirectory)
+              cleanTargetFolder: true
+
+  - stage: QualityChecks
+    displayName: Quality Checks
+    dependsOn: Initialize
+    jobs:
+      - job: QualityChecks
+        displayName: Run SonarQube and Coverage
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          # - script: npm run test:coverage
+          #   displayName: 'Run vtest coverage (Cobertura)'
+
+          # - task: PublishCodeCoverageResults@2
+          #   displayName: 'Publish code coverage'
+          #   inputs:
+          #     codeCoverageTool: Cobertura
+          #     summaryFileLocation: 'coverage/cobertura-coverage.xml'
+
+          - task: SonarQubePrepare@7
+            displayName: 'Prepare SonarQube analysis'
+            inputs:
+              SonarQube: 'abb-dms-sonarqubeserver-service-connection'
+              scannerMode: 'CLI'
+              configMode: 'manual'
+              cliProjectKey: 'MOHP_EGW_Citadel_UI'
+              cliProjectName: 'MOHP_EGW_Citadel_UI'
+              cliProjectVersion: '1.0'
+              cliSources: '.'
+              extraProperties: |
+                sonar.host.url=https://codescan.abb.com/
+                sonar.typescript.lcov.reportPaths=coverage/lcov.info
+                sonar.qualitygate.wait=true
+
+          - task: SonarQubeAnalyze@7
+            displayName: 'Run SonarQube analysis'
+            inputs:
+              jdkversion: 'JAVA_HOME_17_X64'
+
+          - task: SonarQubePublish@7
+            displayName: 'Publish SonarQube results'
+            inputs:
+              pollingTimeoutSec: '300'
+
+  - stage: CopyYAMLFiles
+    displayName: Copy YAML files
+    dependsOn: Initialize
+    jobs:
+      - job: CopyYAMLFiles
+        displayName: Copy YAML
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: replacetokens@6
+            displayName: Replace tokens in yml file
+            inputs:
+              rootDirectory: $(CodeLocation)
+              targetFiles: '**/*.yml'
+
+          - template: yaml_templates/CopyFilesArtifactory.yml@deploymentscripts
+            parameters:
+              SourceFolder: $(CodeLocation)
+              Contents: '**/*.yml'
+
+          - task: PublishPipelineArtifact@1
+            displayName: Artifacts to deploy
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)
+              artifactName: drop
+
+  - stage: BuildDev
+    displayName: Build Image (Dev)
+    dependsOn: CopyYAMLFiles
+    condition: and(succeeded(), eq(${{eq(variables['Build.SourceBranchName'], 'develop')}}, 'True'))
+    jobs:
+      - job: BuildDev
+        displayName: Build Next Dev
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: replacetokens@6
+            displayName: Replace tokens in yml file
+            inputs:
+              rootDirectory: $(CodeLocation)
+              targetFiles: '**/*.yml'
+
+          - task: Docker@2
+            displayName: 'Login to Docker Hub'
+            inputs:
+              command: 'login'
+              containerRegistry: 'abb-dms-nonprod-container-registry-connection'
+          - task: Docker@2
+            displayName: Build and Push an image
+            inputs:
+              command: 'buildAndPush'
+              azureSubscription: abb-dms-nonprod-service-connection
+              repository: '$(Build.Repository.Name)/dms-citadel-ui-polaris-dev'
+              Dockerfile: '$(Build.SourcesDirectory)/Dockerfile'
+              azureContainerRegistry: '{"loginServer":"$(ACRNAME).azurecr.io", "id" : "$(ACRID)"}'
+              containerRegistry: 'abb-dms-nonprod-container-registry-connection'
+              imageName: $(Build.Repository.Name)/dms-citadel-ui-polaris-dev:$(Build.BuildId)
+              tags: |
+                $(Build.BuildId)
+                v1.2
+                latest
+              includeSourceTags: true
+              includeLatestTag: true
+
+  - stage: BuildStage
+    displayName: Build Image (Stage)
+    dependsOn: CopyYAMLFiles
+    condition: and(succeeded(), eq(${{eq(variables['Build.SourceBranchName'], 'stage')}}, 'True'))
+    jobs:
+      - job: BuildStage
+        displayName: Build Next Stage
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: replacetokens@6
+            displayName: Replace tokens in yml file
+            inputs:
+              rootDirectory: $(CodeLocation)
+              targetFiles: '**/*.yml'
+
+          - task: Docker@2
+            displayName: 'Login to Docker Hub'
+            inputs:
+              command: 'login'
+              containerRegistry: 'abb-dms-nonprod-container-registry-connection'
+          - task: Docker@2
+            displayName: Build and Push an image
+            inputs:
+              command: 'buildAndPush'
+              azureSubscription: abb-dms-nonprod-service-connection
+              repository: '$(Build.Repository.Name)/dms-citadel-ui-polaris-stage'
+              Dockerfile: '$(Build.SourcesDirectory)/Dockerfile.stage'
+              azureContainerRegistry: '{"loginServer":"$(ACRNAME).azurecr.io", "id" : "$(ACRID)"}'
+              containerRegistry: 'abb-dms-nonprod-container-registry-connection'
+              imageName: $(Build.Repository.Name)/dms-citadel-ui-polaris-stage:$(Build.BuildId)
+              tags: |
+                $(Build.BuildId)
+                v1.2
+                latest
+              includeSourceTags: true
+              includeLatestTag: true
+
+  - stage: BuildProd
+    displayName: Build Image (Prod)
+    dependsOn: CopyYAMLFiles
+    condition: and(succeeded(), eq(${{eq(variables['Build.SourceBranchName'], 'master')}}, 'True'))
+    jobs:
+      - job: BuildProd
+        displayName: Build Next Prod
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: replacetokens@6
+            displayName: Replace tokens in yml file
+            inputs:
+              rootDirectory: $(CodeLocation)
+              targetFiles: '**/*.yml'
+          - task: Docker@2
+            displayName: 'Login to Docker Hub'
+            inputs:
+              command: 'login'
+              containerRegistry: 'abb-dms-prod-container-registry-connection'
+          - task: Docker@2
+            displayName: Build and Push an image
+            inputs:
+              command: 'buildAndPush'
+              azureSubscription: abb-dms-prod-service-connection
+              repository: '$(Build.Repository.Name)/dms-citadel-ui-polaris-prod'
+              Dockerfile: '$(Build.SourcesDirectory)/Dockerfile.prod'
+              azureContainerRegistry: '{"loginServer":"$(ACRNAME).azurecr.io", "id" : "$(ACRIDPROD)"}'
+              containerRegistry: 'abb-dms-prod-container-registry-connection'
+              imageName: $(Build.Repository.Name)/dms-citadel-ui-polaris-prod:$(Build.BuildId)
+              tags: |
+                $(Build.BuildId)
+                v1.2
+                latest
+              includeSourceTags: true
+              includeLatestTag: true
+
+  - stage: DeployToDev
+    displayName: Deploy to Dev k8s
+    dependsOn: BuildDev
+    jobs:
+      - deployment: Deploytok8s
+        environment: abb-dms-non-prod-environment
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@1
+                  inputs:
+                    targetPath: $(System.ArtifactsDirectory)/drop
+                    artifactName: drop
+                    buildType: current
+
+                - task: Kubernetes@1
+                  displayName: 'Create deployment and Apply Image from Registry'
+                  inputs:
+                    connectionType: Azure Resource Manager
+                    azureSubscriptionEndpoint: abb-dms-nonprod-service-connection
+                    azureResourceGroup: abb-dms-non-prod-we-rg-001
+                    kubernetesCluster: abb-dms-non-prod-we-aks-001
+                    namespace: dev
+                    command: apply
+                    useConfigurationFile: true
+                    configuration: $(Build.ArtifactStagingDirectory)/drop/deployment-azure.yml
+
+  - stage: DeployToStage
+    displayName: Deploy to Stage k8s
+    dependsOn: BuildStage
+    jobs:
+      - deployment: Deploytok8s
+        environment: abb-dms-non-prod-environment
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@1
+                  inputs:
+                    targetPath: $(System.ArtifactsDirectory)/drop
+                    artifactName: drop
+                    buildType: current
+
+                - task: Kubernetes@1
+                  displayName: 'Create deployment and Apply Image from Registry'
+                  inputs:
+                    connectionType: Azure Resource Manager
+                    azureSubscriptionEndpoint: abb-dms-nonprod-service-connection
+                    azureResourceGroup: abb-dms-non-prod-we-rg-001
+                    kubernetesCluster: abb-dms-non-prod-we-aks-001
+                    namespace: stage
+                    command: apply
+                    useConfigurationFile: true
+                    configuration: $(Build.ArtifactStagingDirectory)/drop/deployment-azure-stage.yml
+
+  - stage: DeployToProd
+    displayName: Deploy to Prod k8s
+    dependsOn: BuildProd
+    jobs:
+      - deployment: Deploytok8s
+        environment: abb-dms-prod-environment
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@1
+                  inputs:
+                    targetPath: $(System.ArtifactsDirectory)/drop
+                    artifactName: drop
+                    buildType: current
+                - task: Kubernetes@1
+                  displayName: 'Create deployment and Apply Image from Registry'
+                  inputs:
+                    connectionType: Azure Resource Manager
+                    azureSubscriptionEndpoint: abb-dms-prod-service-connection
+                    azureResourceGroup: abb-dms-prod-we-rg-001
+                    kubernetesCluster: abb-dms-prod-we-aks-001
+                    namespace: default
+                    command: apply
+                    useConfigurationFile: true
+                    configuration: $(Build.ArtifactStagingDirectory)/drop/deployment-azure-prod.yml
