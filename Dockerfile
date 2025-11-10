@@ -1,0 +1,93 @@
+FROM node:20.19.4-alpine AS base
+
+# Add security labels and metadata
+LABEL maintainer="mohp@abb.com" \
+    version="1.0" \
+    description="EGW Citadel UI - Next.js Application" \
+    security.scan="enabled" \
+    org.opencontainers.image.source="https://dev.azure.com/BUDrivesOrg/MOHP-Edge-Gateway/_git/dms-citadel-ui"
+
+# Install dependencies only when needed
+FROM base AS deps
+WORKDIR /app
+
+# Set environment variable to suppress Node.js warnings
+ENV NODE_OPTIONS="--no-warnings"
+
+# Install system dependencies and clean up in one layer
+RUN apk add --no-cache libc6-compat curl && \
+    rm -rf /var/cache/apk/*
+
+# Copy package files for better caching (copy package.json first for better layer caching)
+COPY package*.json .npmrc ./
+
+# Install dependencies with optimized flags
+RUN npm ci --only=production --no-audit --no-fund --ignore-scripts --silent && \
+    npm cache clean --force
+
+# Build stage with all dependencies
+FROM base AS builder
+WORKDIR /app
+
+# Install all dependencies (including devDependencies for building)
+COPY package*.json .npmrc ./
+RUN npm ci --no-audit --no-fund --ignore-scripts --silent
+
+# Copy source files in optimal order for caching
+COPY next.config.ts tsconfig.json next-env.d.ts postcss.config.mjs ./
+COPY middleware.ts index.d.ts eslint.config.mjs ./
+COPY app ./app
+COPY public ./public
+
+# Copy specific environment file for the deployment
+COPY .env.dev .env
+
+# Build configuration and optimization
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+# Build the application
+RUN npm run build && \
+    npm prune --production && \
+    npm cache clean --force
+
+# Production runtime image
+FROM base AS runner
+WORKDIR /app
+
+# Production environment variables
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME="0.0.0.0"
+
+# Create user and install runtime dependencies in one layer
+RUN apk add --no-cache curl dumb-init && \
+    addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 --shell /sbin/nologin --home /app --ingroup nodejs nextjs && \
+    rm -rf /var/cache/apk/*
+
+# Copy built application without write permissions
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+# Set secure permissions in one layer
+RUN find /app -type f -exec chmod 444 {} \; && \
+    find /app -type d -exec chmod 555 {} \; && \
+    chmod 555 server.js && \
+    mkdir -p .next && \
+    chmod 755 .next && \
+    chown nextjs:nodejs .next
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+# Use dumb-init for proper signal handling
+ENTRYPOINT ["dumb-init", "--"]
+
+# Run the application
+CMD ["node", "server.js"]

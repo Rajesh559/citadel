@@ -1,0 +1,54 @@
+:root {
+  --background-primary-disabled: rgba(186, 186, 186, 1);
+  --background-primary-selected: rgba(51, 51, 51, 1);
+  --background-stateless-alternative: rgba(245, 245, 245, 1);
+  --background-stateless-contrast: rgba(51, 51, 51, 1);
+  --background-stateless-uplifted: rgba(245, 245, 245, 1);
+  --border-primary-default: rgba(219, 219, 219, 1);
+  --border-primary-hover: rgba(235, 235, 235, 1);
+  --data-viz-primary-selection-blue-secondary: rgba(222, 244, 250, 1);
+  --foreground-inverted: rgba(255, 255, 255, 1);
+  --foreground-primary: rgba(31, 31, 31, 1);
+}
+
+.dark {
+  --background-primary-disabled: rgba(82, 82, 82, 1);
+  --background-primary-selected: rgba(255, 255, 255, 1);
+  --background-stateless-alternative: rgba(0, 0, 0, 1);
+  --background-stateless-contrast: rgba(219, 219, 219, 1);
+  --background-stateless-uplifted: rgba(51, 51, 51, 1);
+  --border-primary-default: rgba(82, 82, 82, 1);
+  --border-primary-hover: rgba(105, 105, 105, 1);
+  --data-viz-primary-selection-blue-secondary: rgba(0, 81, 255, 0.32);
+  --foreground-inverted: rgba(31, 31, 31, 1);
+  --foreground-primary: rgba(186, 186, 186, 1);
+}
+
+@theme inline {
+  --color-background-primary-disabled: var(--background-primary-disabled);
+  --color-background-primary-selected: var(--background-primary-selected);
+  --color-background-stateless-alternative: var(--background-stateless-alternative);
+  --color-background-stateless-base: rgba(255, 255, 255, 1);
+  --color-background-stateless-contrast: var(--background-stateless-contrast);
+  --color-background-stateless-uplifted: var(--background-stateless-uplifted);
+  --color-border-primary-default: var(--border-primary-default);
+  --color-border-primary-hover: var(--border-primary-hover);
+  --color-border-status-warning-potential-risk: rgba(255, 162, 0, 1);
+  --color-brand-red: rgba(255, 0, 15, 1);
+  --color-data-viz-primary-selection-blue-primary: rgba(27, 122, 194, 1);
+  --color-data-viz-primary-selection-blue-secondary: var(--data-viz-primary-selection-blue-secondary);
+  --color-data-viz-primary-selection-orange-primary: rgba(237, 87, 57, 1);
+  --color-dropdown-selected: rgba(255, 255, 255, 1);
+  --color-foreground-inverted: var(--foreground-inverted);
+  --color-foreground-primary: var(--foreground-primary);
+  --color-foreground-secondary: rgba(105, 105, 105, 1);
+  --color-foreground-white: rgba(255, 255, 255, 1);
+  --color-foreground-white-transparent: rgba(255, 255, 255, 0.5);
+  --color-status-discreet-success: rgba(33, 166, 122, 0.08);
+  --color-status-discreet-warning-severe: rgba(255, 115, 0, 0.08);
+  --color-status-primary-error: rgba(239, 58, 52, 1);
+  --color-status-primary-info: rgba(0, 81, 255, 1);
+  --color-status-primary-success: rgba(33, 166, 122, 1);
+  --color-status-primary-warning-severe: rgba(255, 115, 0, 1);
+  --color-uiblue-background-primary-default: rgba(51, 102, 255, 1);
+}
